@@ -74,14 +74,31 @@ nên ảnh chưa gán nhãn luôn chặn pipeline.
    (toạ độ trùng dự đoán MISSING) → máy sửa đúng cú pháp nhưng tạo lỗi thiếu box; chỉ phát hiện nhờ model lớn.
 
 ## 5. Train: raw vs clean (tùy chọn, chấm riêng)
-**Chưa chạy.** Phần train trên Colab là tùy chọn (chấm riêng); bài nộp này dừng ở phần lõi (`make check-core`),
-chưa có `submission/results/`, nên **không có kết luận nào về việc clean tốt hơn raw**.
+Colab T4, `scripts/train_compare.py`: **yolo26n**, **20 epoch**, imgsz 640, batch 16, **seed 0 và 1** cho mỗi biến thể;
+cùng val (`gold_val`, 40 ảnh) và cùng test (`data/test`, 100 ảnh, 387 box). Bảng từ `submission/results/comparison.md`:
 
-Khi chạy (yolo26n, 20 epoch, 2 seed mỗi biến thể), cần lưu ý trước hai điểm có thể làm sai lệch so sánh:
-- **Rò rỉ test trong `raw`:** pipeline phát hiện **5 ảnh** raw trùng ảnh test/val (`LEAK_TEST`) → mAP của `raw` có thể bị đẩy lên giả.
-  Cách kiểm: đo lại `raw` sau khi bỏ riêng 5 ảnh này.
-- **`clean` là bản Hold:** 38/202 ảnh vẫn còn cảnh báo chưa duyệt (nhãn máy còn sót) và test chỉ có 100 ảnh →
-  chênh lệch nhỏ hơn độ lệch chuẩn giữa 2 seed thì phải ghi là **chưa kết luận được**.
+| biến thể | #ảnh train | số seed | mAP50 | mAP50-95 | precision | recall |
+|---|---|---|---|---|---|---|
+| raw | 224 | 2 | 0.726 ± 0.000 | 0.512 ± 0.004 | 0.764 ± 0.061 | 0.649 ± 0.028 |
+| clean | 202 | 2 | 0.701 ± 0.025 | 0.487 ± 0.008 | 0.759 ± 0.003 | 0.625 ± 0.019 |
+
+**Chênh mAP50 (clean − raw) = −0.025**, xấp xỉ **1 độ lệch chuẩn giữa 2 seed của clean (±0.025)** → **chưa kết luận được**;
+trên số liệu, clean **không tốt hơn** raw (mAP50-95 cũng thấp hơn 0.024 ở cả 2 seed).
+Theo lớp (AP50 trung bình 2 seed): car 0.738 → 0.738, person 0.822 → 0.823, bus 0.695 → 0.703, nhưng **truck 0.648 → 0.538**
+(clean seed 1 chỉ 0.486) → gần như toàn bộ chênh lệch nằm ở một lớp và một seed.
+
+Giả thuyết và cách kiểm:
+1. **Model gần như không học từ dữ liệu:** ở cả 4 lần chạy, mAP50 trên val cao nhất ở **epoch 1** (raw 0.801 / 0.800, clean 0.791 / 0.739)
+   rồi giảm → `best.pt` ≈ model pretrain COCO sau 1 epoch, nên chất lượng nhãn ít ảnh hưởng tới điểm test.
+   Kiểm: train với lr thấp hơn / freeze backbone để val tăng theo epoch, rồi so lại.
+2. **Raw được "làm sạch" ngầm và có lợi thế:** Ultralytics tự bỏ **11 ảnh** nhãn hỏng (id 93/−1/7/4, `nan`, thiếu cột, ảnh hỏng),
+   nên raw thực sự train **213** ảnh so với **202** của clean; trong đó còn **5 ảnh trùng tập test** (`LEAK_TEST`) làm mAP raw cao giả.
+   Kiểm: train lại raw sau khi bỏ 5 ảnh `LEAK_TEST`.
+3. **Nhiễu lớn, mẫu nhỏ:** 2 seed, test 100 ảnh; độ lệch clean (±0.025) ngang chênh lệch, lớp truck ít box nên dao động mạnh.
+   Kiểm: chạy thêm seed (≥ 5) và xem độ lệch của AP truck.
+
+**Việc tiếp theo:** sửa cấu hình train như (1), bỏ ảnh rò rỉ khỏi raw như (2), thêm seed như (3); và duyệt nốt 38 ảnh còn cảnh báo
+để `clean` thật sự sạch trước khi so lại.
 
 ## 6. Quyết định và ghi chú AI
 **(a) Quyết định: Hold.** `clean_v1` chỉ dùng làm bản nháp để thử nghiệm (vd. train so sánh), **chưa phát hành**.
