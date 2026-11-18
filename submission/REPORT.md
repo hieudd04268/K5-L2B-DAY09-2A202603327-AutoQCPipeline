@@ -117,3 +117,14 @@ và chỉ cách ngưỡng 1 ảnh; nâng `phash_dist` lên 20 cũng ra Release n
 - **Một lần AI sai:** khi thử `second_opinion` thẳng trên `data/raw` (có ảnh hỏng không nằm trong cache), code gọi model thật,
   tự tải `yolo26l.pt` (50MB) vào repo rồi chết ở ảnh cắt cụt; đã xoá file `.pt` (nằm trong `.gitignore`, chưa commit)
   và chỉ dùng cache. Ngoài ra AI từng gộp 2 module vào 1 commit, trái quy tắc "mỗi module một commit" → đã tách lại.
+
+## Thưởng: check mới `BOX_ASPECT` (lệch tỉ lệ khung hình)
+`pipeline/checks/aspect_ratio.py` + `tests/test_aspect_ratio.py` (**8 test**, toàn bộ `pytest -q`: **87 passed**). Cảnh báo (WARN) khi
+box có hình dạng vô lý với lớp, tính bằng pixel: **person rộng > 3 lần cao**, hoặc **car/truck/bus có rộng/cao < 0.3**.
+Lỗi này các check khác không bắt (box đúng cú pháp, trong ảnh, model lớn vẫn có thể khớp IoU).
+- **Chọn ngưỡng từ nhãn người** (`gold_val` + `calib`): chỉ **3/273** box vượt ngưỡng → báo động giả khoảng 1%.
+- **Không gắn vào `make run`:** `pipeline/checks/__init__.py` và `configs/pipeline.yaml` là file cố định, nên check chạy riêng
+  (`python -m pipeline.checks.aspect_ratio work/run/ds`); ngưỡng đọc từ `cfg["aspect_ratio"]` nếu có, không có thì dùng mặc định.
+- **Kết quả:** raw **4/719** box, sau pipeline **3** box. Mở ảnh xem: `img_0159` dòng 4 là một box dẹt ôm cả dãy khán giả
+  (đáng sửa); `img_0148` (người bị cắt ở mép trên) và `img_0133` (xe buýt bị cắt ở mép trái) là nhãn hợp lý → điểm mù:
+  vật bị cắt ở mép ảnh có tỉ lệ lạ nhưng vẫn đúng, nên check chỉ cảnh báo cho người xem.
